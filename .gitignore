@@ -169,3 +169,6 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Debug workflows
+.github/workflows/*debug.yaml
