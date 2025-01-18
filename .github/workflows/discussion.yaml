@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - staging
+      - discussion_workflow
     paths:
       - 'cfg/**/*.yaml'
 
@@ -15,12 +16,12 @@ jobs:
       contents: write
     
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
@@ -31,10 +32,14 @@ jobs:
 
       - name: Install GitHub CLI
         run: |
-          sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key C99B11DEB97541F0
-          sudo apt-add-repository https://cli.github.com/packages
-          sudo apt update
-          sudo apt install gh -y
+          (type -p wget >/dev/null || (sudo apt update && sudo apt-get install wget -y)) \
+            && sudo mkdir -p -m 755 /etc/apt/keyrings \
+            && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+            && cat $out | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+            && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+            && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+            && sudo apt update \
+            && sudo apt install gh -y
 
       - name: Process new YAML files
         env:
@@ -47,7 +52,7 @@ jobs:
             folder=$(dirname "$file" | xargs basename)
             filename=$(basename "$file")
             discussion_title="$folder/$filename"
-            
+
             # Check if discussion already exists
             existing_discussion=$(gh api graphql -f query='
               query($owner:String!, $repo:String!, $search:String!) {
@@ -59,65 +64,35 @@ jobs:
                   }
                 }
               }' -f owner=$GITHUB_REPOSITORY_OWNER -f repo=$(basename $GITHUB_REPOSITORY) -f search="$discussion_title" --jq '.data.repository.discussions.nodes[0].title')
-            
-              if [ -z "$existing_discussion" ]; then
-                # Parse YAML and extract metadata
-                python - <<EOF
-                import yaml
-                import os
-                
-                with open('$file', 'r') as f:
-                    config = yaml.safe_load(f)
-                
-                metadata = {k: v for k, v in config.items() if k in ['author', 'task', 'keywords', 'description', 'flops', 'parameters', 'min_version']}
-                
-                body = f"Discussion for \`{discussion_title}\`\n\n### Metadata\n"
-                for key, value in metadata.items():
-                    if key == 'author':
-                        value = f"@{value}"
-                    body += f"- **{key}:** {value}\n"
-                
-                # Write body to temporary file
-                with open('discussion_body.txt', 'w') as f:
-                    f.write(body)
-                EOF
-              
-              # Create discussion
-              discussion_url=$(gh discussion create \
-                --title "$discussion_title" \
-                --body-file discussion_body.txt \
-                --category "General")
-              
-              # Update YAML with discussion link
+
+            if [ -z "$existing_discussion" ]; then
+              # Parse YAML and extract metadata
               python - <<EOF
               import yaml
               import os
-              
+
               with open('$file', 'r') as f:
                   config = yaml.safe_load(f)
-              
-              # Find position after min_version
-              lines = []
-              with open('$file', 'r') as f:
-                  lines = f.readlines()
-              
-              new_lines = []
-              min_version_found = False
-              for line in lines:
-                  new_lines.append(line)
-                  if 'min_version:' in line and not min_version_found:
-                      new_lines.append(f"discussion: {discussion_url}\n")
-                      min_version_found = True
-              
-              with open('$file', 'w') as f:
-                  f.writelines(new_lines)
+
+              metadata = {k: v for k, v in config.items() if k in ['author', 'task', 'keywords', 'description', 'flops', 'parameters', 'min_version']}
+
+              body = f"Discussion for \`{discussion_title}\`\n\n### Metadata\n"
+              for key, value in metadata.items():
+                  if key == 'author':
+                      value = f"@{value}"
+                  body += f"- **{key}:** {value}\n"
+
+              # Write body to temporary file
+              with open('discussion_body.txt', 'w') as f:
+                  f.write(body)
               EOF
-              
-              # Commit and push changes
-              git config --global user.name "GitHub Action"
-              git config --global user.email "action@github.com"
-              git add "$file"
-              git commit -m "Add discussion link to $discussion_title"
-              git push
+
+              # Read the discussion body from the temporary file
+              DISCUSSION_BODY=$(cat discussion_body.txt)
+
+              # Create a new discussion using GitHub CLI
+              gh api repos/$GITHUB_REPOSITORY/discussions -f title="$discussion_title" -F body="$DISCUSSION_BODY"
+            else
+              echo "Discussion '$discussion_title' already exists. Skipping."
             fi
           done
