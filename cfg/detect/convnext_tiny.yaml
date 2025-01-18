@@ -2,10 +2,10 @@
 author: Y-T-G
 task: detect
 keywords: cnn, convnext
-description: Swin-T pretrained backbone with detect head.
-flops: 65.4
-parameters: 32506997
-min_version: 8.3.64
+description: ConvNeXt Tiny pretrained backbone with detect head.
+flops: 89.1
+parameters: 32037235
+min_version: 8.3.59
 
 # Model
 nc: 1
