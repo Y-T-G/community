@@ -1,7 +1,7 @@
 # Metadata
 author: Y-T-G
 task: classify
-keywords: cnn, efficientnet
+keywords: [cnn, efficientnet]
 description: EfficientNet-B0 pretrained backbone with Classify head.
 flops: 8.6
 parameters: 5649789
