@@ -33,16 +33,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install PyYAML
 
-      - name: Install GitHub CLI
+      - name: Determine default branch
+        id: get_default_branch
         run: |
-          (type -p wget >/dev/null || (sudo apt update && sudo apt-get install wget -y)) \
-            && sudo mkdir -p -m 755 /etc/apt/keyrings \
-            && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-            && cat $out | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
-            && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
-            && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-            && sudo apt update \
-            && sudo apt install gh -y
+          echo "DEFAULT_BRANCH=$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')" >> $GITHUB_ENV
+
+      - name: Fetch default branch
+        run: git fetch origin ${{ env.DEFAULT_BRANCH }}
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
@@ -57,36 +54,56 @@ jobs:
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          # Compare against main branch to find new or modified YAML files
-          git diff origin/main --name-only | grep "^cfg/.*\.yaml$" | while read file; do
+          set -e
+          # Compare against default branch to find new or modified YAML files
+          git diff origin/${DEFAULT_BRANCH} --name-only | grep "^cfg/.*\.yaml$" | while read file; do
             # Get folder and filename
             folder=$(dirname "$file" | xargs basename)
             filename=$(basename "$file")
             discussion_title="$folder/$filename"
 
-            # Check if discussion already exists
+            echo "Processing file: $file with title: $discussion_title"
+
+            # Construct the search query
+            search_query="repo:${GITHUB_REPOSITORY} in:title \"$discussion_title\""
+
+            # Check if discussion already exists using the search API
             existing_discussion=$(gh api graphql -f query='
-              query($owner:String!, $repo:String!, $search:String!) {
-                repository(owner:$owner, name:$repo) {
-                  discussions(first:1, query:$search) {
-                    nodes {
+              query($searchQuery:String!) {
+                search(query:$searchQuery, type: DISCUSSION, first:1) {
+                  nodes {
+                    ... on Discussion {
                       title
                     }
                   }
                 }
-              }' -f owner=$GITHUB_REPOSITORY_OWNER -f repo=$(basename $GITHUB_REPOSITORY) -f search="$discussion_title" --jq '.data.repository.discussions.nodes[0].title')
+              }' \
+              -f searchQuery="$search_query" \
+              --jq '.data.search.nodes[0].title')
 
             if [ -z "$existing_discussion" ]; then
               # Parse YAML and extract metadata using external script
               python scripts/parse_metadata.py "$file"
 
-              # Create discussion and capture the URL
-              discussion_url=$(gh discussion create \
-                --title "$discussion_title" \
-                --body-file discussion_body.txt \
-                --category "General" \
-                --json url \
-                --jq '.url')
+              # Create discussion using GraphQL and capture the URL
+              create_response=$(gh api graphql -f query='
+                mutation($repositoryId: ID!, $title: String!, $body: String!) {
+                  createDiscussion(input: {repositoryId: $repositoryId, title: $title, body: $body}) {
+                    discussion {
+                      url
+                    }
+                  }
+                }' \
+                -f repositoryId="$(gh api graphql -f query='
+                  query($repo: String!) {
+                    repository(name: $repo) {
+                      id
+                    }
+                  }' -f repo="$GITHUB_REPOSITORY" --jq '.data.repository.id')" \
+                -f title="$discussion_title" \
+                -f body="$(cat "$file")")
+
+              discussion_url=$(echo "$create_response" | jq -r '.data.createDiscussion.discussion.url')
 
               # Update YAML with discussion link using external script
               python scripts/update_yaml.py "$file" "$discussion_url"
