@@ -1,7 +1,7 @@
 # Metadata
 author: Y-T-G
 task: classify
-keywords: cnn, mobilenet
+keywords: [cnn, mobilenet]
 description: MobileNetV3-Large pretrained backbone with Classify head.
 flops: 6.0
 parameters: 4204593
