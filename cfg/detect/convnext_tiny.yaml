@@ -1,7 +1,7 @@
 # Metadata
 author: Y-T-G
 task: detect
-keywords: cnn, convnext
+keywords: [cnn, convnext]
 description: ConvNeXt Tiny pretrained backbone with detect head.
 flops: 89.1
 parameters: 32037235
