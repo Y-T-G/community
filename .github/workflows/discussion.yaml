@@ -44,6 +44,9 @@ jobs:
             && sudo apt update \
             && sudo apt install gh -y
 
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+
       - name: Process new YAML files
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
