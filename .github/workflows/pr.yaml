@@ -41,7 +41,7 @@ jobs:
         with:
           files_yaml: |
               cfg:
-                - 'cfg/**.yaml'
+                - cfg/*/*.yaml
 
       - name: Start tmate session
         uses: mxschmitt/action-tmate@v3
@@ -49,6 +49,8 @@ jobs:
             CFG_ALL_CHANGED_FILES: ${{ steps.changed-files-yaml.outputs.cfg_all_changed_files }}
             PR_AUTHOR: ${{ github.event.pull_request.user.login }}
             PR_NUMBER: ${{ github.event.number }}
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            GITHUB_REPOSITORY: ${{ github.repository }}
 
       - name: Wait for user input
         run: |
@@ -63,4 +65,5 @@ jobs:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           PR_NUMBER: ${{ github.event.number }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: python scripts/validate_yaml.py
