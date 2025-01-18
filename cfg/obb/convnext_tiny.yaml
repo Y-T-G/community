@@ -3,7 +3,7 @@ author: Y-T-G
 task: obb
 keywords: [cnn, convnext]
 description: ConvNeXt-Tiny pretrained backbone with OBB head.
-flops: 92.3
+flops: 91.3
 parameters: 32680774
 min_version: 8.3.59
 
