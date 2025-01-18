@@ -69,32 +69,26 @@ jobs:
               }' -f owner=$GITHUB_REPOSITORY_OWNER -f repo=$(basename $GITHUB_REPOSITORY) -f search="$discussion_title" --jq '.data.repository.discussions.nodes[0].title')
 
             if [ -z "$existing_discussion" ]; then
-              # Parse YAML and extract metadata
-              python - <<EOF
-              import yaml
-              import os
+              # Parse YAML and extract metadata using external script
+              python scripts/parse_metadata.py "$file"
 
-              with open('$file', 'r') as f:
-                  config = yaml.safe_load(f)
+              # Create discussion and capture the URL
+              discussion_url=$(gh discussion create \
+                --title "$discussion_title" \
+                --body-file discussion_body.txt \
+                --category "General" \
+                --json url \
+                --jq '.url')
 
-              metadata = {k: v for k, v in config.items() if k in ['author', 'task', 'keywords', 'description', 'flops', 'parameters', 'min_version']}
+              # Update YAML with discussion link using external script
+              python scripts/update_yaml.py "$file" "$discussion_url"
 
-              body = f"Discussion for \`{discussion_title}\`\n\n### Metadata\n"
-              for key, value in metadata.items():
-                  if key == 'author':
-                      value = f"@{value}"
-                  body += f"- **{key}:** {value}\n"
-
-              # Write body to temporary file
-              with open('discussion_body.txt', 'w') as f:
-                  f.write(body)
-              EOF
-
-              # Read the discussion body from the temporary file
-              DISCUSSION_BODY=$(cat discussion_body.txt)
-
-              # Create a new discussion using GitHub CLI
-              gh api repos/$GITHUB_REPOSITORY/discussions -f title="$discussion_title" -F body="$DISCUSSION_BODY"
+              # Commit and push changes
+              git config --global user.name "GitHub Action"
+              git config --global user.email "action@github.com"
+              git add "$file"
+              git commit -m "Add discussion link to $discussion_title"
+              git push
             else
               echo "Discussion '$discussion_title' already exists. Skipping."
             fi
