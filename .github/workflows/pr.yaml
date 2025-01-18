@@ -8,7 +8,7 @@ on:
 
 jobs:
   validate-yaml:
-    if: github.event.pull_request.head.ref != 'staging'
+    if: github.event.pull_request.base.ref != 'staging'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
