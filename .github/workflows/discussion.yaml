@@ -1,6 +1,8 @@
 name: Create Discussion for New YAML Configs
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
   push:
     branches:
       - staging
@@ -47,7 +49,8 @@ jobs:
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          git diff --name-only ${{ github.event.before }} ${{ github.event.after }} | grep "^cfg/.*\.yaml$" | while read file; do
+          # Compare against main branch to find new or modified YAML files
+          git diff origin/main --name-only | grep "^cfg/.*\.yaml$" | while read file; do
             # Get folder and filename
             folder=$(dirname "$file" | xargs basename)
             filename=$(basename "$file")
