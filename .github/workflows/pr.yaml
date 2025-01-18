@@ -23,7 +23,7 @@ jobs:
           python-version: '3.10'
 
       - name: Get changed files
-        id: changed-files
+        id: changed-files-yaml
         uses: tj-actions/changed-files@v45
         with:
           files_yaml: |
@@ -33,11 +33,11 @@ jobs:
       - name: Start tmate session
         uses: mxschmitt/action-tmate@v3
         env:
-            CFG_ALL_CHANGED_FILES: ${{ steps.changed-files-yaml.outputs.cfg_all_changed_files }}
-            PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-            PR_NUMBER: ${{ github.event.number }}
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-            GITHUB_REPOSITORY: ${{ github.repository }}
+          CFG_ALL_CHANGED_FILES: ${{ steps.changed-files-yaml.outputs.cfg_all_changed_files }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_NUMBER: ${{ github.event.number }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
 
       - name: Cache pip packages
         uses: actions/cache@v3
