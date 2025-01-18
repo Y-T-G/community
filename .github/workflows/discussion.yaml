@@ -41,18 +41,21 @@ jobs:
       - name: Fetch default branch
         run: git fetch origin ${{ env.DEFAULT_BRANCH }}
 
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
+      - name: Determine target branch
+        id: determine_branch
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "TARGET_BRANCH=${{ github.event.pull_request.base.ref }}" >> $GITHUB_ENV
+          else
+            echo "TARGET_BRANCH=${{ github.ref }}" | sed 's|refs/heads/||' >> $GITHUB_ENV
+          fi
 
       - name: Process new YAML files
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
         run: |
           set -e
           # Compare against default branch to find new or modified YAML files
@@ -85,25 +88,67 @@ jobs:
               # Parse YAML and extract metadata using external script
               python scripts/parse_metadata.py "$file"
 
+              # Fetch the repository ID (existing code)
+              repository_id=$(gh api graphql -f query='
+                query($repo: String!, $owner: String!) {
+                  repository(name: $repo, owner: $owner) {
+                    id
+                  }
+                }' \
+                -f repo="$(basename "$GITHUB_REPOSITORY")" \
+                -f owner="$GITHUB_REPOSITORY_OWNER" \
+                --jq '.data.repository.id')
+
+              # Check if repository ID was retrieved successfully
+              if [ -z "$repository_id" ]; then
+                echo "Error: Unable to retrieve repository ID."
+                exit 1
+              fi
+
+              # Fetch the category ID for "General"
+              category_id=$(gh api graphql -f query='
+                query($repo: String!, $owner: String!) {
+                  repository(name: $repo, owner: $owner) {
+                    discussionCategories(first: 100) {
+                      nodes {
+                        id
+                        name
+                      }
+                    }
+                  }
+                }' \
+                -f repo="$(basename "$GITHUB_REPOSITORY")" \
+                -f owner="$GITHUB_REPOSITORY_OWNER" \
+                --jq '.data.repository.discussionCategories.nodes[] | select(.name=="General") | .id')
+
+              # Check if category ID was retrieved successfully
+              if [ -z "$category_id" ]; then
+                echo "Error: Unable to find the 'General' discussion category."
+                exit 1
+              fi
+
               # Create discussion using GraphQL and capture the URL
               create_response=$(gh api graphql -f query='
-                mutation($repositoryId: ID!, $title: String!, $body: String!) {
-                  createDiscussion(input: {repositoryId: $repositoryId, title: $title, body: $body}) {
+                mutation($repositoryId: ID!, $categoryId: ID!, $title: String!, $body: String!) {
+                  createDiscussion(input: {repositoryId: $repositoryId, categoryId: $categoryId, title: $title, body: $body}) {
                     discussion {
                       url
                     }
                   }
                 }' \
-                -f repositoryId="$(gh api graphql -f query='
-                  query($repo: String!) {
-                    repository(name: $repo) {
-                      id
-                    }
-                  }' -f repo="$GITHUB_REPOSITORY" --jq '.data.repository.id')" \
+                -f repositoryId="$repository_id" \
+                -f categoryId="$category_id" \
                 -f title="$discussion_title" \
-                -f body="$(cat "$file")")
+                -f body="$(cat discussion_body.txt)")
 
+              # Extract the discussion URL from the response
               discussion_url=$(echo "$create_response" | jq -r '.data.createDiscussion.discussion.url')
+
+              # Check if discussion was created successfully
+              if [ -z "$discussion_url" ] || [ "$discussion_url" == "null" ]; then
+                echo "Error: Failed to create discussion."
+                exit 1
+              fi
 
               # Update YAML with discussion link using external script
               python scripts/update_yaml.py "$file" "$discussion_url"
@@ -113,7 +158,10 @@ jobs:
               git config --global user.email "action@github.com"
               git add "$file"
               git commit -m "Add discussion link to $discussion_title"
-              git push
+              git push origin HEAD:"$TARGET_BRANCH"
+
+              # Clean up temporary files
+              rm discussion_body.txt
             else
               echo "Discussion '$discussion_title' already exists. Skipping."
             fi

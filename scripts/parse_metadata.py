@@ -31,6 +31,8 @@ def main(yaml_file):
                 value = f"**@{value}**"
             elif key == 'keywords':
                 value = ', '.join(f'`{k}`' for k in value) if isinstance(value, list) else f'`{value}`'
+            elif key == 'parameters':
+                value = f"{value:,}"
             body += f"{emoji} **{key}:** {value}\n"
 
         with open('discussion_body.txt', 'w') as f:
