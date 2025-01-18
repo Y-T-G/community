@@ -38,27 +38,27 @@ def validate_yaml(file_path):
     # Validate author
     pr_author = os.getenv('PR_AUTHOR')
     if config.get('author') != pr_author:
-        errors.append(f"Author should be '{pr_author}', found '{config.get('author')}'")
+        errors.append(f"👤 **Author**: Expected `{pr_author}`, found `{config.get('author')}`")
 
     # Validate task
     folder_name = Path(file_path).parent.name
     if config.get('task') != folder_name:
-        errors.append(f"Task should be '{folder_name}', found '{config.get('task')}'")
+        errors.append(f"📋 **Task**: Expected `{folder_name}`, found `{config.get('task')}`")
 
     # Validate keywords
     keywords = config.get('keywords', [])
     if not keywords or not isinstance(keywords, list) or not all(isinstance(k, str) and k.islower() for k in keywords):
-        errors.append("Keywords should be a non-empty list of lowercase strings")
+        errors.append("🏷️ **Keywords**: Must be a non-empty list of lowercase strings")
 
     # Validate description
     desc = config.get('description', '')
     if not desc or not isinstance(desc, str) or len(desc.split()) > 1000:
-        errors.append("Description should be a non-empty string with maximum 1000 words")
+        errors.append("📝 **Description**: Must be a non-empty string with maximum 1000 words")
 
     # Validate min_version
     min_version = config.get('min_version')
     if not min_version:
-        errors.append("min_version is required")
+        errors.append("📦 **min_version**: Required field is missing")
     else:
         try:
             if not os.path.isdir('ultralytics'):
@@ -69,7 +69,7 @@ def validate_yaml(file_path):
             subprocess.run(['git', 'checkout', f'tags/v{min_version}'], check=True)
             subprocess.run(['pip', 'install', '-e', '.'], check=True)
         except subprocess.CalledProcessError:
-            errors.append(f"Invalid min_version: {min_version}")
+            errors.append(f"📦 **min_version**: Invalid version `{min_version}`")
 
     # Validate model, FLOPs, parameters, and strides
     try:
@@ -78,10 +78,10 @@ def validate_yaml(file_path):
         _, params, _, flops = model.info()
         
         if abs(flops - config.get('flops', 0)) > 0.1:
-            errors.append(f"FLOPs mismatch: expected {config.get('flops')}, got {flops:.1f}")
+            errors.append(f"💻 **FLOPs**: Expected `{config.get('flops')}`, got `{flops:.1f}`")
         
         if params != config.get('parameters', 0):
-            errors.append(f"Parameters mismatch: expected {config.get('parameters')}, got {params}")
+            errors.append(f"🔢 **Parameters**: Expected `{config.get('parameters')}`, got `{params}`")
         
         # Validate strides
         import torch
@@ -95,17 +95,17 @@ def validate_yaml(file_path):
         computed_strides = [imgsz // o.shape[-1] for o in out]
         
         if computed_strides != config.get('strides', []):
-            errors.append(f"Strides mismatch: expected {config.get('strides')}, got {computed_strides}")
+            errors.append(f"📏 **Strides**: Expected `{config.get('strides')}`, got `{computed_strides}`")
     except Exception as e:
-        errors.append(f"Failed to load model with min_version {min_version}: {str(e)}")
+        errors.append(f"⚠️ **Model Error**: Failed to load model with min_version {min_version}: `{str(e)}`")
 
     # Validate nc
     nc = config.get('nc', 0)
     if not isinstance(nc, int) or nc <= 0:
-        errors.append("nc must be an integer greater than 0")
+        errors.append("🎯 **nc**: Must be an integer greater than 0")
 
     if errors:
-        comment_on_pr("\n".join(["YAML validation failed:"] + errors))
+        comment_on_pr("## ❌ YAML Validation Failed\n\n" + "\n".join(errors))
         sys.exit(1)
 
 def main():
