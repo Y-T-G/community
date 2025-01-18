@@ -1,6 +1,6 @@
 # Metadata
 author: Y-T-G
-task: detect
+task: segment
 keywords: [cnn, convnext]
 description: ConvNeXt-Tiny pretrained backbone with Segment head.
 flops: 141.1
