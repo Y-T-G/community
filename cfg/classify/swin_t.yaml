@@ -1,7 +1,7 @@
 # Metadata
 author: Y-T-G
 task: classify
-keywords: transformer, swin
+keywords: [transformer, swin]
 description: Swin-T pretrained backbone with Classify head.
 flops: 49.4
 parameters: 28506235
