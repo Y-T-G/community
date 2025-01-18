@@ -35,6 +35,8 @@ def main(yaml_file):
                 value = f"{value:,}"
             body += f"{emoji} **{key}:** {value}\n"
 
+        body += "\nIf you found this config helpful, consider upvoting this discussion! 🔼"
+
         with open('discussion_body.txt', 'w') as f:
             f.write(body)
 

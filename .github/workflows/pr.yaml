@@ -5,11 +5,10 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - 'cfg/*/*.yaml'
-    branches-ignore:
-      - 'staging'
 
 jobs:
   validate-yaml:
+    if: github.event.pull_request.base.ref != 'staging'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write

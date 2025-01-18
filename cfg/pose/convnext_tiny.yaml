@@ -1,0 +1,22 @@
+# Metadata
+author: Y-T-G
+task: pose
+keywords: [cnn, convnext]
+description: ConvNeXt-Tiny pretrained backbone with Pose head.
+flops: 91.5
+parameters: 32732926
+min_version: 8.3.59
+discussion: https://github.com/Y-T-G/community/discussions/26
+
+# Model
+nc: 1
+strides: [8, 16, 32]
+kpt_shape: [17, 3]
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, TorchVision, [768, "convnext_tiny", "DEFAULT", True, 2, True]]
+  - [0, 1, Index, [192, 4]]  # (1, 192, 80, 80) - 1
+  - [0, 1, Index, [384, 6]]  # (1, 384, 40, 40) - 2
+  - [0, 1, Index, [768, 8]]  # (1, 768, 20, 20) - 3
+head:
+  - [[1, 2, 3], 1, Pose, [nc, kpt_shape]]
