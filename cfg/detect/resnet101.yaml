@@ -1,7 +1,7 @@
 # Metadata
 author: Y-T-G
 task: detect
-keywords: cnn, resnet
+keywords: [cnn, resnet]
 description: ResNet-101 pretrained backbone with detect head.
 flops: 236.8
 parameters: 70698259
