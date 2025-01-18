@@ -1,7 +1,7 @@
 # Metadata
 author: Y-T-G
 task: classify
-keywords: cnn, convnext
+keywords: [cnn, convnext]
 description: ConvNeXt-Tiny pretrained backbone with Classify head.
 flops: 73.7
 parameters: 28805473
