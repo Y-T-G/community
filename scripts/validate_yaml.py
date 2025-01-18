@@ -67,7 +67,7 @@ def validate_yaml(file_path):
                 print("ultralytics directory already exists. Skipping clone.")
             os.chdir('ultralytics')
             subprocess.run(['git', 'checkout', f'tags/v{min_version}'], check=True)
-            subprocess.run(['pip', 'install', '-e', '.'], check=True)
+            subprocess.run(['pip', 'install', '.'], check=True)
         except subprocess.CalledProcessError:
             errors.append(f"📦 **min_version**: Invalid version `{min_version}`")
 
@@ -109,9 +109,13 @@ def validate_yaml(file_path):
         sys.exit(1)
 
 def main():
-    for file in os.getenv('CFG_ALL_CHANGED_FILES').split():
-        if file.endswith(('.yaml', '.yml')):
-            validate_yaml(os.path.abspath(file))
+    yaml_files = [file for file in os.getenv('CFG_ALL_CHANGED_FILES').split() 
+                  if file.endswith(('.yaml', '.yml'))]
+    if len(yaml_files) > 1:
+        comment_on_pr("## ❌ Too Many YAML Files\n\nEach PR should only modify one YAML config file.")
+        sys.exit(1)
+    elif yaml_files:
+        validate_yaml(os.path.abspath(yaml_files[0]))
 
 if __name__ == "__main__":
     main()

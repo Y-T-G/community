@@ -43,15 +43,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyyaml torch requests
 
-      - name: Start tmate session
-        uses: mxschmitt/action-tmate@v3
-        env:
-          CFG_ALL_CHANGED_FILES: ${{ steps.changed-files-yaml.outputs.cfg_all_changed_files }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          PR_NUMBER: ${{ github.event.number }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-
       - name: Validate YAML
         if: steps.changed-files-yaml.outputs.cfg_any_changed == 'true'
         env:
