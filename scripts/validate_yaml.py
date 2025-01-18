@@ -111,7 +111,7 @@ def validate_yaml(file_path):
 def main():
     for file in os.getenv('CFG_ALL_CHANGED_FILES').split():
         if file.endswith(('.yaml', '.yml')):
-            validate_yaml(file)
+            validate_yaml(os.path.abspath(file))
 
 if __name__ == "__main__":
     main()
