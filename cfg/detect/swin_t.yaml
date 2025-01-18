@@ -1,7 +1,7 @@
 # Metadata
 author: Y-T-G
 task: detect
-keywords: transformer, swin
+keywords: [transformer, swin]
 description: Swin-T pretrained backbone with detect head.
 flops: 65.4
 parameters: 32506997
