@@ -107,7 +107,7 @@ def validate_yaml(file_path):
 
     os.chdir("..")
     if errors:
-        comment_on_pr("## ❌ `{folder_name}/{filename}` Validation Failed\n\n" + "\n".join(errors))
+        comment_on_pr(f"## ❌ `{folder_name}/{filename}` Validation Failed\n\n" + "\n".join(errors))
         return -1
     return 0
 
