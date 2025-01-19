@@ -3,8 +3,8 @@ author: Y-T-G
 task: detect
 keywords: [transformer, swin]
 description: Swin-T pretrained backbone with Detect head.
-flops: 65.4
-parameters: 32506997
+flops: 64.8
+parameters: 31736461
 min_version: 8.3.64
 
 # Model
