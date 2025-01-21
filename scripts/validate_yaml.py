@@ -41,12 +41,13 @@ def get_output_shapes(model):
         else:
             shape_list.append(f"  - {layers[-1-i]}  # {ori_len - i - 1}")
 
-    max_len = max(len(s.split("  #")[0]) for s in shape_list)                                                 formatted = [s.split("  #")[0].ljust(max_len + 4) + "# " + s.split("  #")[1] for s in shape_list]
+    max_len = max(len(s.split("  #")[0]) for s in shape_list)
+    formatted = [s.split("  #")[0].ljust(max_len + 4) + "# " + s.split("  #")[1] for s in shape_list]
     formatted = list(reversed(formatted))
     formatted.insert(0, "backbone:")
     formatted.insert(1, "  # [from, repeats, module, args]")
     formatted.insert(len(model.yaml["backbone"]) + 2, "head:")
-    return formatted
+    return [layer.replace("'", "") for layer in formatted]
 
 def validate_yaml(file_path):
     with open(file_path) as f:
