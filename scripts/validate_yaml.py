@@ -31,7 +31,7 @@ def comment_on_pr(message):
 def get_output_shapes(model):
     ori_len = len(model.model.model)
     shape_list = []
-    layers = model.yaml["backbone"] + model.yaml["head"]
+    layers = [str(layer).replace("'", "") for layer in model.yaml["backbone"] + model.yaml["head"]]
 
     for i in range(ori_len):
         model.model.model = model.model.model[:-1] if i > 0 else model.model.model
@@ -47,7 +47,7 @@ def get_output_shapes(model):
     formatted.insert(0, "backbone:")
     formatted.insert(1, "  # [from, repeats, module, args]")
     formatted.insert(len(model.yaml["backbone"]) + 2, "head:")
-    return [layer.replace("'", "") for layer in formatted]
+    return formatted
 
 def validate_yaml(file_path):
     with open(file_path) as f:
