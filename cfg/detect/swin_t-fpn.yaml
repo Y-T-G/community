@@ -2,8 +2,8 @@
 author: Y-T-G
 task: detect
 keywords: [transformer, swin]
-description: Swin-T pretrained backbone with Detect head.
-flops: 73.u
+description: Swin-T pretrained backbone with YOLO11 FPN neck and Detect head.
+flops: 73.7
 parameters: 40200397
 min_version: 8.3.64
 
