@@ -28,6 +28,25 @@ def comment_on_pr(message):
     else:
         print(f"Failed to post comment: {response.status_code} - {response.text}")
 
+def get_output_shapes(model):
+    ori_len = len(model.model.model)
+    shape_list = []
+    layers = model.yaml["backbone"] + model.yaml["head"]
+
+    for i in range(ori_len):
+        model.model.model = model.model.model[:-1] if i > 0 else model.model.model
+        out = model.model(torch.randn(1, 3, 640, 640))
+        if isinstance(out, torch.Tensor):
+            shape_list.append(f"  - {layers[-1-i]}  # {tuple(out.shape)} - {ori_len - i - 1}")
+        else:
+            shape_list.append(f"  - {layers[-1-i]}  # {ori_len - i - 1}")
+
+    max_len = max(len(s.split("  #")[0]) for s in shape_list)                                                 formatted = [s.split("  #")[0].ljust(max_len + 4) + "# " + s.split("  #")[1] for s in shape_list]
+    formatted = list(reversed(formatted))
+    formatted.insert(0, "backbone:")
+    formatted.insert(1, "  # [from, repeats, module, args]")
+    formatted.insert(len(model.yaml["backbone"]) + 2, "head:")
+    return formatted
 
 def validate_yaml(file_path):
     with open(file_path) as f:
