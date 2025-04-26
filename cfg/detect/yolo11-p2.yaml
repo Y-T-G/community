@@ -3,8 +3,18 @@ author: Y-T-G
 task: detect
 keywords: [cnn, yolo11, small-object]
 description: YOLO11 object detection model with an extra P2 scale for small object detecton.
-flops: 11.4
-parameters: 2740032
+flops:
+  n: 11.4
+  s: 29.7
+  m: 88.9
+  l: 113.6
+  x: 245.1
+parameters:
+  n: 2740032
+  s: 9625968
+  m: 20591120
+  l: 26116368
+  x: 57849456
 min_version: 8.3.0
 
 # Model
