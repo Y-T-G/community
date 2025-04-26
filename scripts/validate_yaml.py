@@ -154,6 +154,16 @@ def validate_yaml(file_path):
             # multi-scale case: expect config["flops"] and config["parameters"] to be dicts
             flops_config = config.get("flops", {})
             params_config = config.get("parameters", {})
+            if not isinstance(flops_config, dict):
+                errors.append(
+                    "⚠️ *Invalid `flops` metadata:* Expected `flops` value for each scale."
+                )
+                flops_config = {}
+            if not isinstance(params_config, dict):
+                errors.append(
+                    "⚠️ *Invalid `parameters` metadata:* Expected `parameters` value for each scale."
+                )
+                params_config = {}
             for s in scales.keys():
                 # build a filename that YOLO will interpret as that scale
                 fp = insert_scale_letter(file_path, s)
@@ -168,7 +178,7 @@ def validate_yaml(file_path):
 
                 # compare
                 config_flops = flops_config.get(s)
-                if config_flops is None or abs(flops - config_flops) > 0.1:
+                if config_flops is None or round(flops, 1) - config_flops:
                     errors.append(
                         f"💻 **FLOPs[{s}]**: Expected `{flops:.1f}`, got `{config_flops}`"
                     )
