@@ -29,26 +29,49 @@ def comment_on_pr(message):
     else:
         print(f"Failed to post comment: {response.status_code} - {response.text}")
 
+
 def get_output_shapes(model):
+    import torch
+
     ori_len = len(model.model.model)
     shape_list = []
-    layers = [str(layer).replace("'", "") for layer in model.yaml["backbone"] + model.yaml["head"]]
+    layers = [
+        str(layer).replace("'", "")
+        for layer in model.yaml["backbone"] + model.yaml["head"]
+    ]
 
     for i in range(ori_len):
         model.model.model = model.model.model[:-1] if i > 0 else model.model.model
         out = model.model(torch.randn(1, 3, 640, 640))
         if isinstance(out, torch.Tensor):
-            shape_list.append(f"  - {layers[-1-i]}  # {tuple(out.shape)} - {ori_len - i - 1}")
+            shape_list.append(
+                f"  - {layers[-1 - i]}  # {tuple(out.shape)} - {ori_len - i - 1}"
+            )
         else:
-            shape_list.append(f"  - {layers[-1-i]}  # {ori_len - i - 1}")
+            shape_list.append(f"  - {layers[-1 - i]}  # {ori_len - i - 1}")
 
     max_len = max(len(s.split("  #")[0]) for s in shape_list)
-    formatted = [s.split("  #")[0].ljust(max_len + 4) + "# " + s.split("  #")[1] for s in shape_list]
+    formatted = [
+        s.split("  #")[0].ljust(max_len + 4) + "# " + s.split("  #")[1]
+        for s in shape_list
+    ]
     formatted = list(reversed(formatted))
     formatted.insert(0, "backbone:")
     formatted.insert(1, "  # [from, repeats, module, args]")
     formatted.insert(len(model.yaml["backbone"]) + 2, "head:")
     return formatted
+
+
+def insert_scale_letter(file_path: str, scale: str) -> str:
+    """
+    "yolo11-p2.yaml" + "n" → "/…/yolo11n-p2.yaml"
+    Ultralytics reads this scale from filename.
+    """
+    p = Path(file_path)
+    stem, suffix = p.stem, p.suffix  # e.g. "yolo11-p2", ".yaml"
+    base, rest = stem.split("-" if "-" in stem else ".", 1)  # "yolo11", "p2"
+    return str(p.with_name(f"{base}{scale}-{rest}{suffix}"))
+
 
 def validate_yaml(file_path):
     with open(file_path) as f:
@@ -111,35 +134,68 @@ def validate_yaml(file_path):
     try:
         from ultralytics import YOLO
 
-        model = YOLO(file_path)
-        _, params, _, flops = model.info()
+        model = None
+        scales = config.get("scales", [])
+        # either one pass or multi-pass per scale:
+        if len(scales) <= 1:
+            # single-value case
+            model = YOLO(file_path)
+            _, params, _, flops = model.info()
 
-        if abs(flops - config.get("flops", 0)) > 0.1:
-            errors.append(
-                f"💻 **FLOPs**: Expected `{flops:.1f}`, got `{config.get('flops')}`"
-            )
+            if abs(flops - config.get("flops", 0)) > 0.1:
+                errors.append(
+                    f"💻 **FLOPs**: Expected `{flops:.1f}`, got `{config.get('flops')}`"
+                )
+            if params != config.get("parameters", 0):
+                errors.append(
+                    f"🔢 **Parameters**: Expected `{params}`, got `{config.get('parameters')}`"
+                )
+        else:
+            # multi-scale case: expect config["flops"] and config["parameters"] to be dicts
+            flops_config = config.get("flops", {})
+            params_config = config.get("parameters", {})
+            for s in scales.keys():
+                # build a filename that YOLO will interpret as that scale
+                fp = insert_scale_letter(file_path, s)
+                try:
+                    model = YOLO(fp)
+                    _, params, _, flops = model.info()
+                except Exception:
+                    errors.append(
+                        f"⚠️ Failed to load model with scale `{s}`. Valid scales are `['n', 's', 'm', 'l', 'x']`."
+                    )
+                    continue
 
-        if params != config.get("parameters", 0):
-            errors.append(
-                f"🔢 **Parameters**: Expected `{params}`, got `{config.get('parameters')}`"
-            )
+                # compare
+                config_flops = flops_config.get(s)
+                if config_flops is None or abs(flops - config_flops) > 0.1:
+                    errors.append(
+                        f"💻 **FLOPs[{s}]**: Expected `{flops:.1f}`, got `{config_flops}`"
+                    )
+
+                config_params = params_config.get(s)
+                if config_params is None or params != config_params:
+                    errors.append(
+                        f"🔢 **Parameters[{s}]**: Expected `{config_params}`, got `{params}`"
+                    )
 
         # Validate strides
-        import torch
+        if model is not None:
+            import torch
 
-        head = model.model.model[-1]
-        f, i = head.f, head.i
-        head = torch.nn.Identity()
-        head.f, head.i = f, i
-        model.model.model[-1] = head
-        imgsz = 640
-        out = model.model(torch.randn(1, 3, imgsz, imgsz))
-        computed_strides = [imgsz // o.shape[-1] for o in out]
+            head = model.model.model[-1]
+            f, i = head.f, head.i
+            head = torch.nn.Identity()
+            head.f, head.i = f, i
+            model.model.model[-1] = head
+            imgsz = 640
+            out = model.model(torch.randn(1, 3, imgsz, imgsz))
+            computed_strides = [imgsz // o.shape[-1] for o in out]
 
-        if computed_strides != config.get("strides", []):
-            errors.append(
-                f"📏 **Strides**: Expected `{computed_strides}`, got `{config.get('strides')}`"
-            )
+            if computed_strides != config.get("strides", []):
+                errors.append(
+                    f"📏 **Strides**: Expected `{computed_strides}`, got `{config.get('strides')}`"
+                )
     except Exception as e:
         print(traceback.format_exc())
         errors.append(
