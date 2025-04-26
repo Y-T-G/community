@@ -3,13 +3,23 @@ author: Y-T-G
 task: segment
 keywords: [cnn, yolo11, small-object]
 description: YOLO11 instance segmentation model with an extra P2 scale for small object detecton.
-flops: 25.4
-parameters: 2993984
+flops:
+  n: 25.4
+  s: 80.5
+  m: 284.6
+  l: 309.2
+  x: 683.9
+parameters:
+  n: 2993984
+  s: 10235568
+  m: 22194640
+  l: 27719888
+  x: 61446576
 min_version: 8.3.0
 
 # Model
 nc: 80
-strides: [4, 8, 16, 32, ]
+strides: [4, 8, 16, 32]
 scales:
   n: [0.50, 0.25, 1024]
   s: [0.50, 0.50, 1024]
