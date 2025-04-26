@@ -16,6 +16,7 @@ parameters:
   l: 26559380
   x: 58845748
 min_version: 8.3.0
+discussion: https://github.com/Y-T-G/community/discussions/62
 
 # Model
 nc: 80
