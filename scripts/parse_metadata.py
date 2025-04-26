@@ -33,6 +33,16 @@ def main(yaml_file):
             "min_version": "💻",
         }
 
+        def unroll_dict(value_dict, format=False):
+            unrolled = ""
+            for k, v in value_dict.items():
+                if format:
+                    unrolled += f"\n\t- `{k}`: {v:,}"
+                else:
+                    unrolled += f"\n\t- `{k}`: {v}"
+            unrolled += "\n"
+            return unrolled
+
         body = f"# Discussion for `{discussion_title}`\n\n## 📊 Metadata\n"
         for key, value in metadata.items():
             emoji = emoji_map.get(key, "")
@@ -44,8 +54,11 @@ def main(yaml_file):
                     if isinstance(value, list)
                     else f"`{value}`"
                 )
-            elif key == "parameters":
-                value = f"{value:,}"
+            elif key in {"flops", "parameters"}:
+                if isinstance(value, dict):  # multiple scales
+                    value = unroll_dict(value, format=key == "parameters")
+                else:
+                    value = f"{value:,}"
             body += f"{emoji} **{key}:** {value}\n"
 
         body += (
