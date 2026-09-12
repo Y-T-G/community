@@ -55,8 +55,8 @@ jobs:
           TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
         run: |
           set -e
-          # Compare against default branch to find new or modified YAML files
-          git diff origin/${DEFAULT_BRANCH} --name-only | grep "^cfg/.*\.yaml$" | while read file; do
+          # Compare against default branch to find new or modified YAML files (skip deleted ones)
+          git diff origin/${DEFAULT_BRANCH} --name-only --diff-filter=AM | grep "^cfg/.*\.yaml$" | while read file; do
             # Get folder and filename
             folder=$(dirname "$file" | xargs basename)
             filename=$(basename "$file")
@@ -67,10 +67,10 @@ jobs:
             # Construct the search query
             search_query="repo:${GITHUB_REPOSITORY} in:title \"$discussion_title\""
 
-            # Check if discussion already exists using the search API
+            # Check if discussion already exists using the search API (exact title match)
             existing_discussion=$(gh api graphql -f query='
               query($searchQuery:String!) {
-                search(query:$searchQuery, type: DISCUSSION, first:1) {
+                search(query:$searchQuery, type: DISCUSSION, first:10) {
                   nodes {
                     ... on Discussion {
                       title
@@ -79,7 +79,7 @@ jobs:
                 }
               }' \
               -f searchQuery="$search_query" \
-              --jq '.data.search.nodes[0].title')
+              --jq ".data.search.nodes[] | select(.title == \"$discussion_title\") | .title")
 
             if [ -z "$existing_discussion" ]; then
               # Parse YAML and extract metadata using external script

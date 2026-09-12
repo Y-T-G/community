@@ -8,23 +8,26 @@ def main(yaml_file, discussion_url):
             lines = f.readlines()
 
         new_lines = []
-        min_version_found = False
+        min_version_index = None
         discussion_key_found = False
+        discussion_line = f"discussion: {discussion_url}\n"
 
+        # Match top-level keys only, so a description mentioning "discussion:" is left alone
         for line in lines:
-            if "min_version:" in line:
-                min_version_found = True
-            if "discussion:" in line:
-                new_lines.append(f"discussion: {discussion_url}\n")
+            if line.startswith("min_version:"):
+                min_version_index = len(new_lines)
+            if line.startswith("discussion:"):
+                new_lines.append(discussion_line)
                 discussion_key_found = True
             else:
                 new_lines.append(line)
 
-        if min_version_found and not discussion_key_found:
-            for index, line in enumerate(new_lines):
-                if "min_version:" in line:
-                    new_lines.insert(index + 1, f"discussion: {discussion_url}\n")
-                    break
+        if not discussion_key_found:
+            if min_version_index is not None:
+                new_lines.insert(min_version_index + 1, discussion_line)
+            else:
+                print(f"Warning: min_version not found in {yaml_file}, adding discussion at top")
+                new_lines.insert(0, discussion_line)
 
         with open(yaml_file, "w") as f:
             f.writelines(new_lines)

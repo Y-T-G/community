@@ -1,10 +1,30 @@
 import os
+import re
 import sys
 import yaml
 import requests
 from pathlib import Path
 import subprocess
 import traceback
+
+ULTRALYTICS_DIR = Path(__file__).resolve().parent.parent / "ultralytics"
+
+
+def install_ultralytics(version):
+    """Clone ultralytics (if needed), check out the tag and pip install it."""
+    if not ULTRALYTICS_DIR.is_dir():
+        subprocess.run(
+            ["git", "clone", "https://github.com/ultralytics/ultralytics", str(ULTRALYTICS_DIR)],
+            check=True,
+        )
+    else:
+        print("ultralytics directory already exists. Skipping clone.")
+    git = ["git", "-C", str(ULTRALYTICS_DIR)]
+    subprocess.run(git + ["fetch", "--tags"], check=True)
+    subprocess.run(git + ["checkout", f"tags/v{version}"], check=True)
+    pip = [sys.executable, "-m", "pip"]
+    subprocess.run(pip + ["uninstall", "ultralytics", "-y"], check=True)
+    subprocess.run(pip + ["install", str(ULTRALYTICS_DIR)], check=True)
 
 
 def comment_on_pr(message):
@@ -69,8 +89,10 @@ def insert_scale_letter(file_path: str, scale: str) -> str:
     """
     p = Path(file_path)
     stem, suffix = p.stem, p.suffix  # e.g. "yolo11-p2", ".yaml"
-    base, rest = stem.split("-" if "-" in stem else ".", 1)  # "yolo11", "p2"
-    return str(p.with_name(f"{base}{scale}-{rest}{suffix}"))
+    if "-" in stem:
+        base, rest = stem.split("-", 1)  # "yolo11", "p2"
+        return str(p.with_name(f"{base}{scale}-{rest}{suffix}"))
+    return str(p.with_name(f"{stem}{scale}{suffix}"))  # "yolo11.yaml" -> "yolo11n.yaml"
 
 
 def validate_yaml(file_path):
@@ -112,43 +134,42 @@ def validate_yaml(file_path):
 
     # Validate min_version
     min_version = config.get("min_version")
-    if not min_version:
+    if min_version is None:
         errors.append("📦 **min_version**: Required field is missing")
     else:
-        try:
-            if not os.path.isdir("ultralytics"):
-                subprocess.run(
-                    ["git", "clone", "https://github.com/ultralytics/ultralytics"],
-                    check=True,
-                )
-            else:
-                print("ultralytics directory already exists. Skipping clone.")
-            os.chdir("ultralytics")
-            subprocess.run(["git", "checkout", f"tags/v{min_version}"], check=True)
-            subprocess.run(["pip", "uninstall", "ultralytics", "-y"], check=True)
-            subprocess.run(["pip", "install", "."], check=True)
-        except subprocess.CalledProcessError:
-            errors.append(f"📦 **min_version**: Invalid version `{min_version}`")
+        # YAML parses `8.3` as a float, so normalise to str before building the tag
+        min_version = str(min_version)
+        if not re.fullmatch(r"\d+\.\d+\.\d+", min_version):
+            errors.append(
+                f"📦 **min_version**: Invalid version `{min_version}`, expected `X.Y.Z`"
+            )
+        else:
+            try:
+                install_ultralytics(min_version)
+            except subprocess.CalledProcessError:
+                errors.append(f"📦 **min_version**: Invalid version `{min_version}`")
 
     # Validate model, FLOPs, parameters, and strides
     try:
         from ultralytics import YOLO
 
         model = None
-        scales = config.get("scales", [])
+        scales = config.get("scales") or {}
         # either one pass or multi-pass per scale:
         if len(scales) <= 1:
             # single-value case
             model = YOLO(file_path)
             _, params, _, flops = model.info()
 
-            if abs(flops - config.get("flops", 0)) > 0.1:
+            config_flops = config.get("flops")
+            if not isinstance(config_flops, (int, float)) or abs(flops - config_flops) > 0.1:
                 errors.append(
-                    f"💻 **FLOPs**: Expected `{flops:.1f}`, got `{config.get('flops')}`"
+                    f"💻 **FLOPs**: Expected `{flops:.1f}`, got `{config_flops}`"
                 )
-            if params != config.get("parameters", 0):
+            config_params = config.get("parameters")
+            if params != config_params:
                 errors.append(
-                    f"🔢 **Parameters**: Expected `{params}`, got `{config.get('parameters')}`"
+                    f"🔢 **Parameters**: Expected `{params}`, got `{config_params}`"
                 )
         else:
             # multi-scale case: expect config["flops"] and config["parameters"] to be dicts
@@ -178,15 +199,18 @@ def validate_yaml(file_path):
 
                 # compare
                 config_flops = flops_config.get(s)
-                if config_flops is None or round(flops, 1) - config_flops:
+                if (
+                    not isinstance(config_flops, (int, float))
+                    or abs(flops - config_flops) > 0.1
+                ):
                     errors.append(
                         f"💻 **FLOPs[{s}]**: Expected `{flops:.1f}`, got `{config_flops}`"
                     )
 
                 config_params = params_config.get(s)
-                if config_params is None or params != config_params:
+                if params != config_params:
                     errors.append(
-                        f"🔢 **Parameters[{s}]**: Expected `{config_params}`, got `{params}`"
+                        f"🔢 **Parameters[{s}]**: Expected `{params}`, got `{config_params}`"
                     )
 
         # Validate strides
@@ -200,6 +224,8 @@ def validate_yaml(file_path):
             model.model.model[-1] = head
             imgsz = 640
             out = model.model(torch.randn(1, 3, imgsz, imgsz))
+            if isinstance(out, torch.Tensor):  # single-input heads, e.g. Classify
+                out = [out]
             computed_strides = [imgsz // o.shape[-1] for o in out]
 
             if computed_strides != config.get("strides", []):
@@ -217,7 +243,6 @@ def validate_yaml(file_path):
     if not isinstance(nc, int) or nc <= 0:
         errors.append("🎯 **nc**: Must be an integer greater than 0")
 
-    os.chdir("..")
     if errors:
         comment_on_pr(
             f"## ❌ `{folder_name}/{filename}` Validation Failed\n\n"
@@ -230,7 +255,7 @@ def validate_yaml(file_path):
 def main():
     yaml_files = [
         file
-        for file in os.getenv("CFG_ALL_CHANGED_FILES").split()
+        for file in os.getenv("CFG_ALL_CHANGED_FILES", "").split()
         if file.endswith((".yaml", ".yml"))
     ]
     if len(yaml_files) > 1:
