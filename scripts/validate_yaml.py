@@ -2,12 +2,13 @@ import os
 import re
 import sys
 import yaml
-import requests
 from pathlib import Path
 import subprocess
 import traceback
 
-ULTRALYTICS_DIR = Path(__file__).resolve().parent.parent / "ultralytics"
+REPO_DIR = Path(__file__).resolve().parent.parent
+CFG_DIR = REPO_DIR / "cfg"
+ULTRALYTICS_DIR = REPO_DIR / "ultralytics"
 
 
 def install_ultralytics(version):
@@ -28,26 +29,18 @@ def install_ultralytics(version):
 
 
 def comment_on_pr(message):
-    pr_number = os.getenv("PR_NUMBER")
-    repo = os.getenv("GITHUB_REPOSITORY")
-    token = os.getenv("GITHUB_TOKEN")
+    """Append the message to COMMENT_FILE. The workflow posts it from a separate job.
 
-    if not all([pr_number, repo, token]):
-        print("Missing environment variables for commenting on PR.")
+    This script runs the PR's YAML through ultralytics, which can execute code from
+    the YAML, so this process must never hold a token with write access.
+    """
+    print(message.encode(sys.stdout.encoding or "utf-8", "replace").decode(sys.stdout.encoding or "utf-8"))
+    comment_file = os.getenv("COMMENT_FILE")
+    if not comment_file:
+        print("COMMENT_FILE not set, not writing PR comment.")
         return
-
-    url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-    }
-    payload = {"body": message}
-
-    response = requests.post(url, headers=headers, json=payload)
-    if response.status_code == 201:
-        print("Comment posted successfully.")
-    else:
-        print(f"Failed to post comment: {response.status_code} - {response.text}")
+    with open(comment_file, "a", encoding="utf-8") as f:
+        f.write(message + "\n\n")
 
 
 def get_output_shapes(model):
@@ -266,7 +259,18 @@ def main():
     elif yaml_files:
         return_code = 0
         for file in yaml_files:
-            return_code += validate_yaml(os.path.abspath(file))
+            # The workflow runs on pull_request_target, so PR-supplied paths are untrusted:
+            # only regular files directly under cfg/<task>/ are validated.
+            path = Path(file)
+            resolved = path.resolve()
+            if (
+                path.is_symlink()
+                or not resolved.is_file()
+                or resolved.parent.parent != CFG_DIR
+            ):
+                print(f"Refusing to validate unexpected path: {file}")
+                sys.exit(1)
+            return_code += validate_yaml(str(resolved))
         if return_code != 0:
             sys.exit(1)
 

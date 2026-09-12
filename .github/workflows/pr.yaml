@@ -1,48 +1,137 @@
 name: PR Validation
 
+# This workflow uses pull_request_target so a comment can be posted on PRs
+# from forks. The job runs in the base-repo context, so the PR is treated as
+# hostile. Loading a config with ultralytics `YOLO()` executes code from the
+# YAML (parse_model does `eval()` on the `activation` field), so validation
+# is isolated from anything with write access. Rules for editing this file:
+#   - validate-yaml is the untrusted job. It gets a read-only token, and that
+#     token is only in the env of the step that lists PR files, never in the
+#     step that runs the config. It has no pip cache (a hostile run could
+#     poison it for later runs on the base branch).
+#   - comment is the trusted job. It has pull-requests: write, checks out
+#     nothing and runs nothing from the PR. It only posts the text artifact.
+#   - Check out the BASE branch only. Scripts and requirements come from there.
+#     Only the PR's cfg/*/*.yaml blobs are copied in, after checking they are
+#     regular files (not symlinks) with safe names.
+#   - Never put ${{ }} expressions holding PR data (branch names, titles,
+#     file names, author) inside a `run:` script. Pass them through `env:`.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
     paths:
       - 'cfg/*/*.yaml'
+
+permissions: {}
 
 jobs:
   validate-yaml:
     if: github.head_ref != 'staging'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
-      pull-requests: write
       contents: read
+      pull-requests: read
     steps:
-      - name: Checkout repository
+      - name: Checkout base branch
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          cache: 'pip' # caching pip dependencies
-          cache-dependency-path: scripts/requirements.txt
 
-      - name: Get changed files
+      - name: Get changed config files from PR
         id: changed-files-yaml
-        uses: tj-actions/changed-files@2f7c5bfce28377bc069a65ba478de0a74aa0ca32
-        with:
-          files_yaml: |
-              cfg:
-                - 'cfg/*/*.yaml'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+
+          files=""
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            # Only plain names under cfg/<task>/<name>.yaml, no spaces, quotes or traversal
+            if ! [[ "$f" =~ ^cfg/[A-Za-z0-9_-]+/[A-Za-z0-9._-]+\.ya?ml$ ]]; then
+              echo "::error::Refusing to validate unexpected path: $f"
+              exit 1
+            fi
+            # Only regular files. A symlink could point the validator at arbitrary runner files.
+            mode=$(git ls-tree "$HEAD_SHA" -- "$f" | cut -d' ' -f1)
+            if [ "$mode" != "100644" ]; then
+              echo "::error::Refusing to validate $f: mode $mode is not a regular file"
+              exit 1
+            fi
+            # Copy just this blob from the PR into the base-branch working tree
+            git checkout "$HEAD_SHA" -- "$f"
+            files="$files $f"
+          done < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+                     --jq '.[] | select(.status != "removed") | .filename | select(test("^cfg/[^/]+/[^/]+\\.ya?ml$"))')
+
+          files="${files# }"
+          echo "Changed config files: ${files:-<none>}"
+          echo "cfg_all_changed_files=$files" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: |
           pip install -r scripts/requirements.txt
 
+      # No token in this step: the PR's YAML runs here.
       - name: Validate YAML
-        if: steps.changed-files-yaml.outputs.cfg_any_changed == 'true'
+        if: steps.changed-files-yaml.outputs.cfg_all_changed_files != ''
         env:
           CFG_ALL_CHANGED_FILES: ${{ steps.changed-files-yaml.outputs.cfg_all_changed_files }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          PR_NUMBER: ${{ github.event.number }}
-          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
+          COMMENT_FILE: ${{ runner.temp }}/validation_comment.md
         run: python scripts/validate_yaml.py
+
+      - name: Upload validation comment
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-comment
+          path: ${{ runner.temp }}/validation_comment.md
+          if-no-files-found: ignore
+          retention-days: 1
+
+  comment:
+    needs: validate-yaml
+    if: always() && needs.validate-yaml.result == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Download validation comment
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: validation-comment
+          path: ${{ runner.temp }}/comment
+
+      - name: Post comment on PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -euo pipefail
+          f="$RUNNER_TEMP/comment/validation_comment.md"
+          if [ ! -s "$f" ]; then
+            echo "No validation comment to post."
+            exit 0
+          fi
+          # The body is untrusted text from the validate job. Cap its size (GitHub
+          # limit is 65536 chars) and put a zero-width space after every @ so
+          # it cannot notify people.
+          body="$RUNNER_TEMP/body.md"
+          {
+            echo "_Automated validation output for the config files in this PR._"
+            echo
+            head -c 60000 "$f" | sed 's/@/@\xE2\x80\x8B/g'
+          } > "$body"
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$body"
